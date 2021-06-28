@@ -8,6 +8,7 @@ import logging
 import json
 import errno
 import re
+import shlex
 from subprocess import Popen, PIPE
 from threading import Event
 from mgr_module import CLIReadCommand, CLIWriteCommand, MgrModule, Option, OptionValue
@@ -22,10 +23,11 @@ def avg(data: Sequence[Union[int, float]]) -> float:
 
 
 class ZabbixSender(object):
-    def __init__(self, sender: str, host: str, port: int, log: logging.Logger) -> None:
+    def __init__(self, sender: str, host: str, port: int, options: str, log: logging.Logger) -> None:
         self.sender = sender
         self.host = host
         self.port = port
+        self.options = options
         self.log = log
 
     def send(self, hostname: str, data: Mapping[str, Union[int, float, str]]) -> None:
@@ -34,6 +36,8 @@ class ZabbixSender(object):
 
         cmd = [self.sender, '-z', self.host, '-p', str(self.port), '-s',
                hostname, '-vv', '-i', '-']
+        
+        cmd[1:1] = shlex.split(self.options)
 
         self.log.debug('Executing: %s', cmd)
 
@@ -45,9 +49,9 @@ class ZabbixSender(object):
 
         stdout, stderr = proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError('%s exited non-zero: %s' % (self.sender,
-                                                           stderr))
-
+            raise RuntimeError('%s exited non-zero (%s): %s, %s' % (self.sender,
+                                            proc.returncode, stdout, stderr))
+            
         self.log.debug('Zabbix Sender: %s', stdout.rstrip())
 
 
@@ -76,6 +80,10 @@ class Module(MgrModule):
             default=10051),
         Option(
             name='identifier',
+            default=""),
+        Option(
+            name='additional_options',
+            type='str',
             default=""),
         Option(
             name='interval',
@@ -309,7 +317,8 @@ class Module(MgrModule):
             try:
                 zabbix = ZabbixSender(cast(str, self.config['zabbix_sender']),
                                       cast(str, server['zabbix_host']),
-                                      cast(int, server['zabbix_port']), self.log)
+                                      cast(int, server['zabbix_port']), 
+                                      cast(str, self.config['additional_options']), self.log)
                 zabbix.send(identifier, data)
             except Exception as exc:
                 self.log.exception('Failed to send.')
