@@ -20,10 +20,11 @@ def avg(data):
 
 
 class ZabbixSender(object):
-    def __init__(self, sender, host, port, log):
+    def __init__(self, sender, host, port, options, log):
         self.sender = sender
         self.host = host
         self.port = port
+        self.options = options
         self.log = log
 
     def send(self, hostname, data):
@@ -32,6 +33,8 @@ class ZabbixSender(object):
 
         cmd = [self.sender, '-z', self.host, '-p', str(self.port), '-s',
                hostname, '-vv', '-i', '-']
+        
+        cmd[1:1] = shlex.split(self.options)
 
         self.log.debug('Executing: %s', cmd)
 
@@ -42,8 +45,8 @@ class ZabbixSender(object):
 
         stdout, stderr = proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError('%s exited non-zero: %s' % (self.sender,
-                                                           stderr))
+            raise RuntimeError('%s exited non-zero (%s): %s, %s' % (self.sender,
+                                            proc.returncode, stdout, stderr))
 
         self.log.debug('Zabbix Sender: %s', stdout.rstrip())
 
@@ -75,6 +78,10 @@ class Module(MgrModule):
             },
             {
                 'name': 'identifier',
+                'default': ""
+            },
+            {
+                'name': 'additional_options',
                 'default': ""
             },
             {
@@ -332,7 +339,8 @@ class Module(MgrModule):
             try:
                 zabbix = ZabbixSender(self.config['zabbix_sender'],
                                       server['zabbix_host'],
-                                      server['zabbix_port'], self.log)
+                                      server['zabbix_port'],
+                                      self.config['additional_options'], self.log)
                 zabbix.send(identifier, data)
             except Exception as exc:
                 self.log.exception('Failed to send.')
